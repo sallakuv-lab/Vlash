@@ -20,13 +20,13 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pygame PyOpenGL Pillow cryptography PyMuPDF openpyxl python-docx reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 playsound simpleaudio
+          python -m pip install pygame PyOpenGL Pillow cryptography PyMuPDF openpyxl python-docx reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 simpleaudio
 
       - name: Verify imports on Windows
         shell: pwsh
         run: |
-          python - <<'PY'
-          import sys, os
+          @'
+          import sys
           import tkinter
           from PIL import Image, ImageTk
           import pygame
@@ -45,7 +45,7 @@ jobs:
           print(sys.version)
           print('PYTHON_PREFIX=' + sys.prefix)
           print('WINDOWS_RUNTIME_IMPORTS=OK')
-          PY
+          '@ | python -
 
       - name: Assemble portable runtime
         shell: pwsh
@@ -55,6 +55,7 @@ jobs:
           Copy-Item -Path "$prefix\*" -Destination portable -Recurse -Force
           if (-not (Test-Path portable\python.exe)) { throw 'python.exe missing' }
           if (-not (Test-Path portable\pythonw.exe)) { throw 'pythonw.exe missing' }
+          if (-not (Test-Path portable\python312.dll)) { throw 'python312.dll missing' }
           if (-not (Test-Path portable\Lib\site-packages\pygame)) { throw 'pygame missing' }
           if (-not (Test-Path portable\tcl)) { throw 'Tcl/Tk missing' }
           Copy-Item portable\pythonw.exe portable\Orione.exe -Force
@@ -63,6 +64,24 @@ jobs:
           Python 3.12
           Dipendenze preinstallate; nessun accesso Internet richiesto in esecuzione.
           "@ | Set-Content -Encoding UTF8 portable\RUNTIME_INFO.txt
+
+      - name: Verify copied portable runtime
+        shell: pwsh
+        run: |
+          @'
+          import sys, pathlib
+          import tkinter
+          from PIL import Image
+          import pygame
+          import OpenGL.GL, OpenGL.GLU
+          import cryptography, fitz, openpyxl, docx, reportlab, tkinterdnd2, extract_msg, win32com.client, tkcalendar, playsound3, simpleaudio
+          root = pathlib.Path(sys.executable).resolve().parent
+          assert root.name == 'portable', root
+          assert (root / 'pythonw.exe').is_file()
+          assert (root / 'python312.dll').is_file()
+          assert (root / 'tcl').is_dir()
+          print('COPIED_WINDOWS_RUNTIME=OK')
+          '@ | .\portable\python.exe -I -
 
       - name: Upload Windows runtime
         uses: actions/upload-artifact@v4
