@@ -1,0 +1,74 @@
+name: Build Orione Windows Runtime
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up Python 3.12 x64
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Install Orione runtime dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pygame PyOpenGL Pillow cryptography PyMuPDF openpyxl python-docx reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 playsound simpleaudio
+
+      - name: Verify imports on Windows
+        shell: pwsh
+        run: |
+          python - <<'PY'
+          import sys, os
+          import tkinter
+          from PIL import Image, ImageTk
+          import pygame
+          import OpenGL.GL, OpenGL.GLU
+          import cryptography
+          import fitz
+          import openpyxl
+          import docx
+          import reportlab
+          import tkinterdnd2
+          import extract_msg
+          import win32com.client
+          import tkcalendar
+          import playsound3
+          import simpleaudio
+          print(sys.version)
+          print('PYTHON_PREFIX=' + sys.prefix)
+          print('WINDOWS_RUNTIME_IMPORTS=OK')
+          PY
+
+      - name: Assemble portable runtime
+        shell: pwsh
+        run: |
+          $prefix = python -c "import sys; print(sys.prefix)"
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item -Path "$prefix\*" -Destination portable -Recurse -Force
+          if (-not (Test-Path portable\python.exe)) { throw 'python.exe missing' }
+          if (-not (Test-Path portable\pythonw.exe)) { throw 'pythonw.exe missing' }
+          if (-not (Test-Path portable\Lib\site-packages\pygame)) { throw 'pygame missing' }
+          if (-not (Test-Path portable\tcl)) { throw 'Tcl/Tk missing' }
+          Copy-Item portable\pythonw.exe portable\Orione.exe -Force
+          @"
+          Runtime Windows x64 per Orione Fix11
+          Python 3.12
+          Dipendenze preinstallate; nessun accesso Internet richiesto in esecuzione.
+          "@ | Set-Content -Encoding UTF8 portable\RUNTIME_INFO.txt
+
+      - name: Upload Windows runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orione-Windows-x64-Runtime
+          path: portable
+          compression-level: 6
+          if-no-files-found: error
+          include-hidden-files: true
