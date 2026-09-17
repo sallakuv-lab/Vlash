@@ -27,7 +27,7 @@ jobs:
           python -m pip install "pyinstaller>=6.16,<7" `
             pygame PyOpenGL Pillow cryptography PyMuPDF openpyxl python-docx `
             reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 `
-            playsound simpleaudio
+            simpleaudio
 
       - name: Build one-folder GUI executable
         shell: pwsh
