@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - portable_launcher.py
+      - test_portable_launcher.py
       - .github/workflows/build-windows.yml
 
 jobs:
