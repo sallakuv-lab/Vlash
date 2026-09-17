@@ -31,17 +31,7 @@ jobs:
           from PIL import Image, ImageTk
           import pygame
           import OpenGL.GL, OpenGL.GLU
-          import cryptography
-          import fitz
-          import openpyxl
-          import docx
-          import reportlab
-          import tkinterdnd2
-          import extract_msg
-          import win32com.client
-          import tkcalendar
-          import playsound3
-          import simpleaudio
+          import cryptography, fitz, openpyxl, docx, reportlab, tkinterdnd2, extract_msg, win32com.client, tkcalendar, playsound3, simpleaudio
           print(sys.version)
           print('PYTHON_PREFIX=' + sys.prefix)
           print('WINDOWS_RUNTIME_IMPORTS=OK')
@@ -58,12 +48,61 @@ jobs:
           if (-not (Test-Path portable\python312.dll)) { throw 'python312.dll missing' }
           if (-not (Test-Path portable\Lib\site-packages\pygame)) { throw 'pygame missing' }
           if (-not (Test-Path portable\tcl)) { throw 'Tcl/Tk missing' }
-          Copy-Item portable\pythonw.exe portable\Orione.exe -Force
           @"
           Runtime Windows x64 per Orione Fix11
           Python 3.12
           Dipendenze preinstallate; nessun accesso Internet richiesto in esecuzione.
           "@ | Set-Content -Encoding UTF8 portable\RUNTIME_INFO.txt
+
+      - name: Build native Orione launcher
+        shell: pwsh
+        run: |
+          @'
+          #define UNICODE
+          #define _UNICODE
+          #include <windows.h>
+          #include <wchar.h>
+          #include <stdio.h>
+
+          int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmdLine, int show) {
+              wchar_t root[32768];
+              DWORD n = GetModuleFileNameW(NULL, root, 32768);
+              if (n == 0 || n >= 32768) return 2;
+              wchar_t *slash = wcsrchr(root, L'\\');
+              if (!slash) return 3;
+              *slash = L'\0';
+
+              wchar_t pythonw[32768];
+              wchar_t script[32768];
+              wchar_t command[65536];
+              if (swprintf_s(pythonw, 32768, L"%ls\\pythonw.exe", root) < 0) return 4;
+              if (swprintf_s(script, 32768, L"%ls\\app\\launch_orione.py", root) < 0) return 5;
+              if (swprintf_s(command, 65536, L"\"%ls\" \"%ls\"", pythonw, script) < 0) return 6;
+
+              STARTUPINFOW si;
+              PROCESS_INFORMATION pi;
+              ZeroMemory(&si, sizeof(si));
+              ZeroMemory(&pi, sizeof(pi));
+              si.cb = sizeof(si);
+              if (!CreateProcessW(pythonw, command, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, root, &si, &pi)) {
+                  MessageBoxW(NULL, L"Impossibile avviare il runtime interno di Orione.", L"Orione Fix11", MB_OK | MB_ICONERROR);
+                  return 7;
+              }
+              CloseHandle(pi.hThread);
+              CloseHandle(pi.hProcess);
+              return 0;
+          }
+          '@ | Set-Content -Encoding ASCII launcher.c
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual C++ toolchain not found' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src = (Resolve-Path launcher.c).Path
+          $out = (Join-Path (Resolve-Path portable).Path 'Orione.exe')
+          $cmd = '"' + $vcvars + '" && cl /nologo /O2 /DUNICODE /D_UNICODE "' + $src + '" user32.lib /link /SUBSYSTEM:WINDOWS /OUT:"' + $out + '"'
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path portable\Orione.exe)) { throw 'Native launcher build failed' }
 
       - name: Verify copied portable runtime
         shell: pwsh
@@ -80,8 +119,26 @@ jobs:
           assert (root / 'pythonw.exe').is_file()
           assert (root / 'python312.dll').is_file()
           assert (root / 'tcl').is_dir()
+          assert (root / 'Orione.exe').is_file()
           print('COPIED_WINDOWS_RUNTIME=OK')
           '@ | .\portable\python.exe -I -
+
+      - name: Smoke test native launcher
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force portable\app | Out-Null
+          @'
+          from pathlib import Path
+          Path(__file__).resolve().parents[1].joinpath('launcher-smoke.txt').write_text('ORIONE_NATIVE_LAUNCHER=OK', encoding='utf-8')
+          '@ | Set-Content -Encoding UTF8 portable\app\launch_orione.py
+          $p = Start-Process -FilePath .\portable\Orione.exe -PassThru
+          $p.WaitForExit(15000) | Out-Null
+          $limit = (Get-Date).AddSeconds(15)
+          while ((Get-Date) -lt $limit -and -not (Test-Path portable\launcher-smoke.txt)) { Start-Sleep -Milliseconds 250 }
+          if (-not (Test-Path portable\launcher-smoke.txt)) { throw 'Native launcher smoke test failed' }
+          if ((Get-Content portable\launcher-smoke.txt -Raw) -notmatch 'ORIONE_NATIVE_LAUNCHER=OK') { throw 'Bad launcher smoke marker' }
+          Remove-Item portable\launcher-smoke.txt -Force
+          Remove-Item portable\app -Recurse -Force
 
       - name: Upload Windows runtime
         uses: actions/upload-artifact@v4
