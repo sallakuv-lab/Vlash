@@ -29,6 +29,10 @@ jobs:
             reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 `
             simpleaudio
 
+      - name: Test portable launcher diagnostics
+        shell: pwsh
+        run: python -m unittest -v test_portable_launcher.py
+
       - name: Build one-folder GUI executable
         shell: pwsh
         run: |
@@ -64,13 +68,28 @@ jobs:
           Path("runtime_probe_ok.txt").write_text("OK", encoding="utf-8")
           '@ | Set-Content -Encoding UTF8 dist\Orione\Orione_Fix11.pyw
           Push-Location dist\Orione
-          .\Orione.exe
+          $process = Start-Process -FilePath ".\Orione.exe" -Wait -PassThru
+          $exitCode = $process.ExitCode
+          Write-Host "Orione.exe exit code: $exitCode"
+          Write-Host "Files after probe:"
+          Get-ChildItem -Force | Select-Object Name,Length | Format-Table -AutoSize
+          if (Test-Path .\standalone_startup_error.log) {
+            Write-Host "===== standalone_startup_error.log ====="
+            Get-Content .\standalone_startup_error.log
+            Write-Host "===== end startup error log ====="
+          }
           Pop-Location
+          if ($exitCode -ne 0) {
+            throw "Orione.exe ha terminato il probe con exit code $exitCode"
+          }
           if (-not (Test-Path dist\Orione\runtime_probe_ok.txt)) {
             throw "Il runtime standalone non ha superato il probe delle dipendenze"
           }
           Remove-Item dist\Orione\runtime_probe_ok.txt
           Remove-Item dist\Orione\Orione_Fix11.pyw
+          if (Test-Path dist\Orione\standalone_startup_error.log) {
+            Remove-Item dist\Orione\standalone_startup_error.log
+          }
 
       - name: Add portable layout markers
         shell: pwsh
