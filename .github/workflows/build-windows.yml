@@ -1,0 +1,95 @@
+name: Build Orione Fix11 Portable Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - portable_launcher.py
+      - .github/workflows/build-windows.yml
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Install build and Orione runtime dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install "pyinstaller>=6.16,<7" `
+            pygame PyOpenGL Pillow cryptography PyMuPDF openpyxl python-docx `
+            reportlab tkinterdnd2 extract-msg pywin32 tkcalendar playsound3 `
+            playsound simpleaudio
+
+      - name: Build one-folder GUI executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onedir `
+            --name Orione `
+            --collect-all pygame `
+            --collect-all OpenGL `
+            --collect-all PIL `
+            --collect-all cryptography `
+            --collect-all fitz `
+            --collect-all openpyxl `
+            --collect-all docx `
+            --collect-all reportlab `
+            --collect-all tkinterdnd2 `
+            --collect-all extract_msg `
+            --collect-all win32com `
+            --collect-all tkcalendar `
+            --collect-all playsound3 `
+            --collect-all simpleaudio `
+            --hidden-import pythoncom `
+            --hidden-import pywintypes `
+            portable_launcher.py
+
+      - name: Verify frozen runtime offline imports
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import pygame, OpenGL.GL, OpenGL.GLU
+          import PIL, cryptography, fitz, openpyxl, docx, reportlab
+          import tkinterdnd2, extract_msg, win32com.client, tkcalendar
+          import playsound3, simpleaudio
+          Path("runtime_probe_ok.txt").write_text("OK", encoding="utf-8")
+          '@ | Set-Content -Encoding UTF8 dist\Orione\Orione_Fix11.pyw
+          Push-Location dist\Orione
+          .\Orione.exe
+          Pop-Location
+          if (-not (Test-Path dist\Orione\runtime_probe_ok.txt)) {
+            throw "Il runtime standalone non ha superato il probe delle dipendenze"
+          }
+          Remove-Item dist\Orione\runtime_probe_ok.txt
+          Remove-Item dist\Orione\Orione_Fix11.pyw
+
+      - name: Add portable layout markers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\Orione\data | Out-Null
+          @'
+          ORIONE FIX11 - STANDALONE PORTATILE WINDOWS 64 BIT
+
+          1. Mantieni tutta questa cartella insieme.
+          2. Metti Orione_Fix11.pyw accanto a Orione.exe.
+          3. Avvia Orione.exe.
+          4. La cartella data resta accanto all'eseguibile ed e' portatile.
+          5. Non sono richiesti Python, pip o Internet sul PC di destinazione.
+          '@ | Set-Content -Encoding UTF8 dist\Orione\LEGGIMI.txt
+
+      - name: Upload portable runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orione_Fix11_Standalone_Runtime
+          path: dist/Orione
+          if-no-files-found: error
+          compression-level: 6
